@@ -1,0 +1,16 @@
+services:
+  db:
+    image: postgres:latest
+    container_name: dynalinks-db
+    restart: always
+    environment:
+      POSTGRES_USER: dynalinks_user
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-changeme123}
+      POSTGRES_DB: dynalinks_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
