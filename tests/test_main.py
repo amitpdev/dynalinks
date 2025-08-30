@@ -3,7 +3,7 @@ from httpx import AsyncClient, ASGITransport
 from app.main import app
 from app.db_pg import get_db_instance, PostgresDB
 from app.config import settings
-from datetime import datetime
+from datetime import datetime, timezone
 
 # Mock database for testing
 class MockPostgresDB(PostgresDB):
@@ -40,8 +40,8 @@ class MockPostgresDB(PostgresDB):
                 "short_url": f"http://test/{short_code}",
                 "fallback_url": str(args[3]).rstrip('/'),
                 "is_active": True,
-                "created_at": datetime.utcnow(),
-                "updated_at": datetime.utcnow()
+                "created_at": datetime.now(timezone.utc),
+                "updated_at": datetime.now(timezone.utc)
             }
             self._data[short_code] = link_data
             return link_data

@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, Request, Response, HTTPException, status
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any
 
 from app.db_pg import PostgresDB, get_db_instance
@@ -113,7 +113,7 @@ async def redirect_dynamic_link(
             )
 
         # Check if expired
-        if db_link['expires_at'] and db_link['expires_at'] < datetime.utcnow().replace(tzinfo=None):
+        if db_link['expires_at'] and db_link['expires_at'] < datetime.now(timezone.utc):
             raise HTTPException(
                 status_code=status.HTTP_410_GONE,
                 detail="Link has expired"
@@ -221,7 +221,7 @@ async def get_link_analytics(
         )
 
     # Calculate date range
-    end_date = datetime.utcnow()
+    end_date = datetime.now(timezone.utc)
     start_date = end_date - timedelta(days=days)
 
     # Total clicks
