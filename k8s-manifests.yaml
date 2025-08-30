@@ -1,0 +1,471 @@
+# ==============================================================================
+# KUBERNETES MANIFESTS FOR DYNALINKS DEPLOYMENT
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# NAMESPACE
+# ------------------------------------------------------------------------------
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: dynalinks
+  labels:
+    app: dynalinks
+
+---
+# ------------------------------------------------------------------------------
+# CONFIGMAP - Non-sensitive configuration
+# ------------------------------------------------------------------------------
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dynalinks-config
+  namespace: dynalinks
+data:
+  # Application Configuration
+  ENVIRONMENT: "production"
+  DEBUG: "false"
+  ALGORITHM: "HS256"
+  ACCESS_TOKEN_EXPIRE_MINUTES: "30"
+  RATE_LIMIT_PER_MINUTE: "60"
+  
+  # Feature Flags
+  ENABLE_ANALYTICS: "true"
+  
+  # External Database Configuration (UPDATE WITH YOUR VPS DATABASE DETAILS)
+  DATABASE_HOST: "your-postgres-vps-ip-or-domain"
+  DATABASE_PORT: "5432"
+  DATABASE_NAME: "dynalinks"
+  DATABASE_USER: "dynalinks_user"
+  
+  # Redis Configuration
+  REDIS_HOST: "redis-service"
+  REDIS_PORT: "6379"
+  REDIS_DB: "0"
+  
+  # Domains (UPDATE THESE WITH YOUR ACTUAL DOMAINS)
+  BASE_DOMAIN: "https://yourdomain.com"
+  SHORT_DOMAIN: "https://dl.yourdomain.com"
+
+---
+# ------------------------------------------------------------------------------
+# SECRET - Sensitive configuration
+# ------------------------------------------------------------------------------
+apiVersion: v1
+kind: Secret
+metadata:
+  name: dynalinks-secrets
+  namespace: dynalinks
+type: Opaque
+data:
+  # Base64 encoded values - UPDATE THESE WITH YOUR ACTUAL VALUES
+  # Generate with: echo -n "your-secret" | base64
+  SECRET_KEY: "eW91ci1zdXBlci1zZWNyZXQta2V5LWNoYW5nZS10aGlz"  # your-super-secret-key-change-this
+  DATABASE_PASSWORD: "c3Ryb25ncGFzc3dvcmQxMjM="  # strongpassword123
+  POSTGRES_PASSWORD: "c3Ryb25ncGFzc3dvcmQxMjM="  # strongpassword123
+
+---
+# PostgreSQL Database - Using External Server
+# No Kubernetes resources needed - using dedicated VPS PostgreSQL server
+
+---
+# ------------------------------------------------------------------------------
+# DEPLOYMENT - Redis Cache
+# ------------------------------------------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  namespace: dynalinks
+  labels:
+    app: redis
+    component: cache
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+        component: cache
+    spec:
+      containers:
+      - name: redis
+        image: redis:7-alpine
+        ports:
+        - containerPort: 6379
+          name: redis
+        command:
+        - redis-server
+        - --appendonly
+        - "yes"
+        - --maxmemory
+        - "512mb"
+        - --maxmemory-policy
+        - "allkeys-lru"
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          tcpSocket:
+            port: 6379
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          exec:
+            command:
+            - redis-cli
+            - ping
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        volumeMounts:
+        - name: redis-data
+          mountPath: /data
+      volumes:
+      - name: redis-data
+        emptyDir: {}
+
+---
+# ------------------------------------------------------------------------------
+# SERVICE - Redis
+# ------------------------------------------------------------------------------
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-service
+  namespace: dynalinks
+  labels:
+    app: redis
+    component: cache
+spec:
+  selector:
+    app: redis
+  ports:
+  - port: 6379
+    targetPort: 6379
+    name: redis
+  type: ClusterIP
+
+---
+# Database Schema - Manual Setup Required on External PostgreSQL Server
+# See EXTERNAL-DATABASE-SETUP.md for schema creation instructions
+
+---
+# ------------------------------------------------------------------------------
+# DEPLOYMENT - DynaLinks Application
+# ------------------------------------------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dynalinks-app
+  namespace: dynalinks
+  labels:
+    app: dynalinks-app
+    component: api
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: dynalinks-app
+  template:
+    metadata:
+      labels:
+        app: dynalinks-app
+        component: api
+    spec:
+      # No init containers needed - external database is managed separately
+      containers:
+      - name: dynalinks-app
+        # UPDATE THIS WITH YOUR ACTUAL IMAGE
+        image: dynalinks:latest
+        ports:
+        - containerPort: 8000
+          name: http
+        env:
+        # Build database URL from components
+        - name: DATABASE_URL
+          value: "postgresql://$(DATABASE_USER):$(DATABASE_PASSWORD)@$(DATABASE_HOST):$(DATABASE_PORT)/$(DATABASE_NAME)"
+        - name: DATABASE_USER
+          valueFrom:
+            configMapKeyRef:
+              name: dynalinks-config
+              key: DATABASE_USER
+        - name: DATABASE_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: dynalinks-secrets
+              key: DATABASE_PASSWORD
+        - name: DATABASE_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: dynalinks-config
+              key: DATABASE_HOST
+        - name: DATABASE_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: dynalinks-config
+              key: DATABASE_PORT
+        - name: DATABASE_NAME
+          valueFrom:
+            configMapKeyRef:
+              name: dynalinks-config
+              key: DATABASE_NAME
+        # Build Redis URL
+        - name: REDIS_URL
+          value: "redis://$(REDIS_HOST):$(REDIS_PORT)/$(REDIS_DB)"
+        - name: REDIS_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: dynalinks-config
+              key: REDIS_HOST
+        - name: REDIS_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: dynalinks-config
+              key: REDIS_PORT
+        - name: REDIS_DB
+          valueFrom:
+            configMapKeyRef:
+              name: dynalinks-config
+              key: REDIS_DB
+        # Other configuration
+        - name: SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: dynalinks-secrets
+              key: SECRET_KEY
+        - name: BASE_DOMAIN
+          valueFrom:
+            configMapKeyRef:
+              name: dynalinks-config
+              key: BASE_DOMAIN
+        - name: SHORT_DOMAIN
+          valueFrom:
+            configMapKeyRef:
+              name: dynalinks-config
+              key: SHORT_DOMAIN
+        - name: ENVIRONMENT
+          valueFrom:
+            configMapKeyRef:
+              name: dynalinks-config
+              key: ENVIRONMENT
+        - name: DEBUG
+          valueFrom:
+            configMapKeyRef:
+              name: dynalinks-config
+              key: DEBUG
+        - name: ENABLE_ANALYTICS
+          valueFrom:
+            configMapKeyRef:
+              name: dynalinks-config
+              key: ENABLE_ANALYTICS
+        - name: RATE_LIMIT_PER_MINUTE
+          valueFrom:
+            configMapKeyRef:
+              name: dynalinks-config
+              key: RATE_LIMIT_PER_MINUTE
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+        livenessProbe:
+          httpGet:
+            path: /api/v1/health
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /api/v1/health
+            port: 8000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        # Security context
+        securityContext:
+          allowPrivilegeEscalation: false
+          runAsNonRoot: true
+          runAsUser: 1000
+          capabilities:
+            drop:
+            - ALL
+
+---
+# ------------------------------------------------------------------------------
+# SERVICE - DynaLinks Application
+# ------------------------------------------------------------------------------
+apiVersion: v1
+kind: Service
+metadata:
+  name: dynalinks-service
+  namespace: dynalinks
+  labels:
+    app: dynalinks-app
+    component: api
+spec:
+  selector:
+    app: dynalinks-app
+  ports:
+  - port: 80
+    targetPort: 8000
+    name: http
+  type: ClusterIP
+
+---
+# ------------------------------------------------------------------------------
+# HORIZONTAL POD AUTOSCALER
+# ------------------------------------------------------------------------------
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: dynalinks-hpa
+  namespace: dynalinks
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: dynalinks-app
+  minReplicas: 3
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+
+---
+# ------------------------------------------------------------------------------
+# POD DISRUPTION BUDGET
+# ------------------------------------------------------------------------------
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: dynalinks-pdb
+  namespace: dynalinks
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: dynalinks-app
+
+---
+# ------------------------------------------------------------------------------
+# INGRESS - External Access
+# ------------------------------------------------------------------------------
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: dynalinks-ingress
+  namespace: dynalinks
+  annotations:
+    # NGINX Ingress Controller annotations
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    
+    # Rate limiting
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+    nginx.ingress.kubernetes.io/rate-limit-window: "1m"
+    
+    # CORS headers for API
+    nginx.ingress.kubernetes.io/enable-cors: "true"
+    nginx.ingress.kubernetes.io/cors-allow-origin: "*"
+    nginx.ingress.kubernetes.io/cors-allow-methods: "GET, POST, PUT, DELETE, OPTIONS"
+    
+    # Cert-manager for SSL (if using cert-manager)
+    # cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  ingressClassName: nginx  # Adjust based on your ingress controller
+  tls:
+  - hosts:
+    - dl.yourdomain.com
+    - api.yourdomain.com
+    secretName: dynalinks-tls
+  rules:
+  # Short link domain (for redirects)
+  - host: dl.yourdomain.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: dynalinks-service
+            port:
+              number: 80
+  # API domain (for management)
+  - host: api.yourdomain.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: dynalinks-service
+            port:
+              number: 80
+
+---
+# ------------------------------------------------------------------------------
+# NETWORK POLICY - Security
+# ------------------------------------------------------------------------------
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: dynalinks-network-policy
+  namespace: dynalinks
+spec:
+  podSelector:
+    matchLabels:
+      app: dynalinks-app
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: ingress-nginx  # Adjust based on your ingress namespace
+    ports:
+    - protocol: TCP
+      port: 8000
+  egress:
+  # Allow DNS
+  - to: []
+    ports:
+    - protocol: UDP
+      port: 53
+  # Allow access to external PostgreSQL database
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 5432
+  # Allow access to Redis (internal)
+  - to:
+    - podSelector:
+        matchLabels:
+          app: redis
+    ports:
+    - protocol: TCP
+      port: 6379
+  # Allow HTTPS outbound (for external APIs if needed)
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 443
