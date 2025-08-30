@@ -1,288 +1,105 @@
-# DynaLinks - Dynamic Link Service
+# DynaLinks · Dynamic Link Service
 
-A Firebase Dynamic Links alternative - A powerful URL shortener with platform-specific redirects, analytics, and QR code generation.
+A production-ready alternative to Firebase Dynamic Links. Create short links with platform-aware redirects, deep linking, and built-in analytics.
 
-## Features
+## ✨ Highlights
 
-- **Platform-Specific Redirects**: Automatically redirect users to different URLs based on their platform (iOS, Android, Desktop)
-- **Short Link Generation**: Create short, memorable URLs with optional custom codes
-- **Analytics & Tracking**: Comprehensive click analytics with device, platform, and location tracking
-- **QR Code Generation**: Generate QR codes for your dynamic links
-- **Expiration Support**: Set expiration dates for temporary links
-- **Social Media Tags**: Meta tags support for better social media sharing
-- **Rate Limiting**: Built-in rate limiting to prevent abuse
-- **Caching**: Redis caching for better performance
-- **REST API**: Full REST API with OpenAPI documentation
+- **Smart redirects**: iOS, Android, and Desktop
+- **Deep links** with JS-based app detection and graceful fallbacks
+- **Analytics**: clicks by platform, referrer, and geolocation (optional)
+- **Privacy**: IPs are hashed before storage
+- **Fast**: Async FastAPI + PostgreSQL + Redis
+- **Docs**: OpenAPI available at `/docs`
 
-## Quick Start with Docker
+## 🚀 Quick Start
 
-1. **Clone the repository**
-   ```bash
-   git clone <repository-url>
-   cd dynalinks
-   ```
+### Docker (recommended)
+```bash
+git clone <repository-url>
+cd dynalinks
+just db-init        # starts Docker and loads schema
+just run            # starts API with auto-reload
+```
+Open: `http://localhost:8000/docs`
 
-2. **Start with Docker Compose**
-   ```bash
-   docker-compose up -d
-   ```
+### Manual
+```bash
+just setup          # creates venv and installs deps
+createdb dynalinks
+psql dynalinks < schema.sql
+redis-server        # or use Docker
+just run
+```
 
-3. **Access the application**
-   - API Documentation: http://localhost:8000/docs
-   - Health Check: http://localhost:8000/health
-
-## Manual Setup
-
-### Prerequisites
-- Python 3.11+
-- PostgreSQL 12+
-- Redis 6+
-
-### Installation
-
-1. **Create virtual environment**
-   ```bash
-   python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
-   ```
-
-2. **Install dependencies**
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-3. **Environment configuration**
-   ```bash
-   cp .env.example .env
-   # Edit .env with your configuration
-   ```
-
-4. **Database setup**
-   ```bash
-   # Create database
-   createdb dynalinks
-   
-   # Create tables manually
-   psql dynalinks < schema.sql
-   ```
-
-5. **Start the application**
-   ```bash
-   uvicorn app.main:app --reload
-   ```
-
-## Configuration
-
-Key environment variables in `.env`:
+## ⚙️ Configuration (.env)
 
 ```env
+# Required
 DATABASE_URL=postgresql://username:password@localhost:5432/dynalinks
 REDIS_URL=redis://localhost:6379/0
 BASE_DOMAIN=https://yourdomain.com
 SHORT_DOMAIN=https://dl.yourdomain.com
-SECRET_KEY=your-super-secret-key
+SECRET_KEY=change-me
+
+# Optional
+ENABLE_ANALYTICS=true
+# If set, enables country/region/city analytics
+GEOIP_DB_PATH=./data/GeoLite2-City.mmdb
+
+ENVIRONMENT=development
+DEBUG=true
+RATE_LIMIT_PER_MINUTE=60
 ```
 
-## API Usage
+## 🌍 GeoIP2 / GeoLite2 (optional)
 
-### Create a Dynamic Link
+GeoIP2 provides country/region/city from an IP address for analytics. This project uses the free MaxMind GeoLite2 City database when `GEOIP_DB_PATH` is configured.
+
+Setup (requires free MaxMind signup):
+- Create an account at the MaxMind site: `https://dev.maxmind.com/geoip/geolite2-free-geolocation-data`
+- Generate a License Key in your account
+- Download the GeoLite2 City database and extract the `.mmdb` file:
+  ```bash
+  mkdir -p ./data && cd ./data
+  curl -L "https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-City&license_key=YOUR_LICENSE_KEY&suffix=tar.gz" -o GeoLite2-City.tar.gz
+  tar -xzf GeoLite2-City.tar.gz
+  mv GeoLite2-City_*/GeoLite2-City.mmdb ./
+  rm -rf GeoLite2-City_* GeoLite2-City.tar.gz
+  ```
+- Set `GEOIP_DB_PATH=./data/GeoLite2-City.mmdb` in `.env` and restart the app
+
+Notes:
+- Database size ~60–100MB on disk; with the default code it is opened per lookup (no persistent RAM usage). You can keep a reader open to trade ~100MB RAM for faster lookups.
+- If `GEOIP_DB_PATH` is unset, location fields are stored as `NULL` and analytics still work.
+
+## 📖 API
+
+- Explore and try endpoints in the interactive docs: `http://localhost:8000/docs`
+- Create a link (example):
+  ```bash
+  curl -X POST "http://localhost:8000/api/v1/links/" \
+    -H "Content-Type: application/json" \
+    -d '{"fallback_url": "https://example.com", "ios_url": "myapp://x", "android_url": "myapp://x"}'
+  ```
+- Redirect endpoint: `GET /{short_code}`
+- Analytics endpoint: `GET /api/v1/analytics/{short_code}`
+
+## 🧰 Tech Stack
+
+- FastAPI, asyncpg, PostgreSQL, Redis
+- Pydantic for config and schemas
+- Deployed via Docker/Kubernetes (see `k8s-manifests.yaml`)
+
+## 🧪 Tests
 
 ```bash
-curl -X POST "http://localhost:8000/api/v1/links/" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "ios_url": "https://apps.apple.com/app/myapp",
-    "android_url": "https://play.google.com/store/apps/details?id=com.myapp",
-    "fallback_url": "https://myapp.com",
-    "title": "My Awesome App",
-    "description": "Check out this awesome app!"
-  }'
+just test    # or: pytest
 ```
 
-Response:
-```json
-{
-  "id": "123e4567-e89b-12d3-a456-426614174000",
-  "short_code": "abc123",
-  "short_url": "https://dl.yourdomain.com/abc123",
-  "ios_url": "https://apps.apple.com/app/myapp",
-  "android_url": "https://play.google.com/store/apps/details?id=com.myapp",
-  "fallback_url": "https://myapp.com",
-  "title": "My Awesome App",
-  "description": "Check out this awesome app!",
-  "is_active": true,
-  "created_at": "2025-01-09T10:00:00Z",
-  "updated_at": "2025-01-09T10:00:00Z"
-}
-```
+## 🤝 Contributing
 
-### Redirect Behavior
+PRs welcome! Please add tests where applicable and run `just test` before submitting.
 
-When someone clicks your short link:
+## 📄 License
 
-- **iOS devices** → Redirected to `ios_url`
-- **Android devices** → Redirected to `android_url`
-- **Desktop/Other** → Redirected to `fallback_url` or `desktop_url` if provided
-- **Missing platform URL** → Redirected to appropriate app store or fallback
-
-### Get Analytics
-
-```bash
-curl "http://localhost:8000/api/v1/analytics/abc123"
-```
-
-Response:
-```json
-{
-  "total_clicks": 150,
-  "unique_clicks": 120,
-  "clicks_by_platform": {
-    "iOS": 60,
-    "Android": 50,
-    "Desktop": 40
-  },
-  "clicks_by_country": {
-    "US": 80,
-    "CA": 30,
-    "GB": 25
-  },
-  "clicks_by_date": {
-    "2025-01-08": 70,
-    "2025-01-09": 80
-  },
-  "top_referrers": {
-    "twitter.com": 45,
-    "facebook.com": 30
-  }
-}
-```
-
-### Generate QR Code
-
-```bash
-curl "http://localhost:8000/api/v1/links/abc123/qr?size=300" -o qr_code.png
-```
-
-## Advanced Features
-
-### Custom Short Codes
-```bash
-curl -X POST "http://localhost:8000/api/v1/links/?custom_code=myproduct" \
-  -H "Content-Type: application/json" \
-  -d '{"fallback_url": "https://myapp.com"}'
-```
-
-### Expiring Links
-```json
-{
-  "fallback_url": "https://myapp.com",
-  "expires_at": "2025-12-31T23:59:59Z"
-}
-```
-
-### Social Media Optimization
-```json
-{
-  "fallback_url": "https://myapp.com",
-  "title": "My App",
-  "description": "Amazing mobile app",
-  "image_url": "https://myapp.com/image.jpg",
-  "social_title": "Download My App Now!",
-  "social_description": "The best app in the store",
-  "social_image_url": "https://myapp.com/social.jpg"
-}
-```
-
-## API Endpoints
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/v1/links/` | Create dynamic link |
-| GET | `/api/v1/links/` | List dynamic links |
-| GET | `/api/v1/links/{short_code}` | Get specific link |
-| PUT | `/api/v1/links/{short_code}` | Update link |
-| DELETE | `/api/v1/links/{short_code}` | Deactivate link |
-| GET | `/api/v1/links/{short_code}/qr` | Generate QR code |
-| GET | `/api/v1/analytics/{short_code}` | Get analytics |
-| GET | `/{short_code}` | Redirect endpoint |
-| GET | `/health` | Health check |
-
-## Testing
-
-```bash
-# Run tests
-pytest
-
-# Run with coverage
-pytest --cov=app
-```
-
-## Production Deployment
-
-### Docker (Recommended)
-
-1. **Build and deploy**
-   ```bash
-   docker-compose -f docker-compose.prod.yml up -d
-   ```
-
-2. **Configure reverse proxy** (nginx/traefik)
-   - Set up SSL certificates
-   - Configure domain routing
-   - Set up rate limiting
-
-### Manual Deployment
-
-1. **Install production dependencies**
-   ```bash
-   pip install gunicorn
-   ```
-
-2. **Run with Gunicorn**
-   ```bash
-   gunicorn app.main:app -w 4 -k uvicorn.workers.UvicornWorker
-   ```
-
-3. **Set up systemd service** (optional)
-
-## Security Considerations
-
-- Use strong `SECRET_KEY` in production
-- Configure CORS properly for your domains
-- Set up rate limiting at reverse proxy level
-- Use HTTPS for all domains
-- Implement API authentication if needed
-- Regular backup of PostgreSQL database
-- Monitor for abuse and implement blocking
-
-## Monitoring & Maintenance
-
-- Monitor application logs
-- Set up database backups
-- Monitor Redis memory usage
-- Track API response times
-- Set up alerts for high error rates
-- Regular security updates
-
-## Similar to Firebase Dynamic Links
-
-This service provides similar functionality to Firebase Dynamic Links:
-
-✅ **Platform-specific redirects**
-✅ **Analytics tracking**  
-✅ **Custom domains**
-✅ **Social media previews**
-✅ **QR code generation**
-✅ **Link expiration**
-✅ **REST API**
-
-## Contributing
-
-1. Fork the repository
-2. Create feature branch
-3. Add tests for new features
-4. Submit pull request
-
-## License
-
-MIT License - see LICENSE file for details.
+MIT — see `LICENSE`.
