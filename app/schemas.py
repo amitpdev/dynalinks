@@ -1,12 +1,12 @@
-from pydantic import BaseModel, HttpUrl, Field, field_validator
+from pydantic import BaseModel, HttpUrl, AnyUrl, Field, field_validator
 from typing import Optional, Dict, Any
 from datetime import datetime, timezone
 from uuid import UUID
 
 
 class DynamicLinkCreate(BaseModel):
-    ios_url: Optional[HttpUrl] = None
-    android_url: Optional[HttpUrl] = None
+    ios_url: Optional[AnyUrl] = None
+    android_url: Optional[AnyUrl] = None
     fallback_url: HttpUrl
     desktop_url: Optional[HttpUrl] = None
     
@@ -29,8 +29,8 @@ class DynamicLinkCreate(BaseModel):
 
 
 class DynamicLinkUpdate(BaseModel):
-    ios_url: Optional[HttpUrl] = None
-    android_url: Optional[HttpUrl] = None
+    ios_url: Optional[AnyUrl] = None
+    android_url: Optional[AnyUrl] = None
     fallback_url: Optional[HttpUrl] = None
     desktop_url: Optional[HttpUrl] = None
     
