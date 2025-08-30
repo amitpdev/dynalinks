@@ -35,7 +35,7 @@ reinstall: clean setup
 
 # Run the FastAPI application with auto-reloading
 run:
-    uvicorn app.main:app --reload --port 8000
+    uvicorn app.main:app --reload --port 8000 --host 0.0.0.0
 
 # Run the test suite using pytest
 test:

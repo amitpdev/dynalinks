@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, Request, Response, HTTPException, status
 import json
+import logging
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any
 
@@ -16,6 +17,9 @@ from app.cache import cache
 from app.config import settings
 from app.utils import hash_ip_address
 from fastapi.responses import HTMLResponse
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Redirect & Analytics"])
 
@@ -155,6 +159,32 @@ async def redirect_dynamic_link(
         # We'll set a placeholder for logging purposes.
         redirect_url = f"html-redirect-for-{platform.lower()}"
         redirect_type = platform.lower()
+
+    # 🎯 LOG REDIRECT DETAILS TO STDOUT
+    print("=" * 80)
+    print(f"REDIRECT EVENT - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print("=" * 80)
+    print(f"Short Code:     {short_code}")
+    print(f"Client IP:      {client_ip}")
+    print(f"Platform:       {platform} | {device_type}")
+    print(f"Browser:        {browser}")
+    print(f"OS:             {os}")
+    print(f"Location:       {city}, {region}, {country}" if country else "Location:       Unknown")
+    print(f"Redirect Type:  {redirect_type}")
+    
+    if is_mobile:
+        print(f"Mobile Targets:")
+        print(f"  iOS URL:        {db_link_data.get('ios_url', 'Not set')}")
+        print(f"  Android URL:    {db_link_data.get('android_url', 'Not set')}")
+        print(f"  Fallback URL:   {db_link_data.get('fallback_url')}")
+        print(f"Response:       HTML page with JavaScript redirect")
+    else:
+        print(f"Target URL:     {redirect_url}")
+        print(f"Response:       HTTP 302 redirect")
+    
+    print(f"Referer:        {referer if referer else 'Direct'}")
+    print(f"Title:          {db_link_data.get('title', 'No title')}")
+    print("=" * 80)
 
     # Track analytics (if enabled)
     if settings.enable_analytics:
