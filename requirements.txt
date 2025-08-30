@@ -1,18 +1,11 @@
-fastapi
-uvicorn
-pydantic
-pydantic-settings
-# sqlalchemy  # Replaced with asyncpg
-# alembic  # No longer needed
-asyncpg
-redis
-# python-dotenv  # Handled by pydantic-settings
-qrcode
-user-agents
-geoip2
-# psycopg2-binary # Replaced with asyncpg
- 
-# Testing
-pytest
-httpx
-# requests
+asyncpg==0.30.0
+fastapi==0.116.1
+geoip2==5.1.0
+httpx==0.28.1
+pipdeptree==2.28.0
+pydantic-settings==2.10.1
+pytest==8.4.1
+qrcode==8.2
+redis==6.4.0
+user-agents==2.2.0
+uvicorn==0.35.0
