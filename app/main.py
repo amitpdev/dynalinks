@@ -1,6 +1,6 @@
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from fastapi.openapi.utils import get_openapi
 import time
 import uvicorn
@@ -87,6 +87,13 @@ async def rate_limit_middleware(request: Request, call_next):
 app.include_router(links.router)
 app.include_router(redirect.router)
 app.include_router(health.router)
+
+# Favicon routes to prevent 404 logs from browsers
+@app.get("/favicon.ico")
+@app.get("/{short_code}/favicon.ico")
+async def favicon():
+    """Handle favicon requests to prevent 404 logs."""
+    return Response(status_code=204)  # No Content
 
 # Custom OpenAPI schema
 def custom_openapi():
