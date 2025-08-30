@@ -1,4 +1,4 @@
-from pydantic import BaseModel, HttpUrl, AnyUrl, Field, field_validator
+from pydantic import BaseModel, HttpUrl, AnyUrl, Field, field_validator, ConfigDict
 from typing import Optional, Dict, Any
 from datetime import datetime, timezone
 from uuid import UUID
@@ -72,8 +72,7 @@ class DynamicLinkResponse(BaseModel):
     
     custom_parameters: Optional[Dict[str, Any]] = None
     
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class LinkAnalyticsResponse(BaseModel):
@@ -84,8 +83,7 @@ class LinkAnalyticsResponse(BaseModel):
     clicks_by_date: Dict[str, int]
     top_referrers: Dict[str, int]
     
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class QRCodeRequest(BaseModel):

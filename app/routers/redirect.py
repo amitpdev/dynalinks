@@ -162,7 +162,7 @@ async def redirect_dynamic_link(
 
     # 🎯 LOG REDIRECT DETAILS TO STDOUT
     print("=" * 80)
-    print(f"REDIRECT EVENT - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"REDIRECT EVENT - {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}")
     print("=" * 80)
     print(f"Short Code:     {short_code}")
     print(f"Client IP:      {client_ip}")
