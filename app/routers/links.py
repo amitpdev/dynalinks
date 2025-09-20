@@ -114,7 +114,11 @@ async def get_dynamic_link(short_code: str, db: PostgresDB = Depends(get_db_inst
     cache_key = f"link:{short_code}"
     cached_link = await cache.get(cache_key)
     if cached_link:
-        return DynamicLinkResponse.model_validate_json(cached_link)
+        try:
+            return DynamicLinkResponse.model_validate_json(cached_link)
+        except Exception:
+            # Cache data is corrupted, delete it and fetch from database
+            await cache.delete(cache_key)
 
     # Query database
     query = "SELECT * FROM dynamic_links WHERE short_code = $1;"
