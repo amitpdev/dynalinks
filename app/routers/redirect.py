@@ -143,6 +143,10 @@ async def redirect_dynamic_link(
     redirect_type = None
     is_mobile = platform in ['iOS', 'Android']
 
+    # Collect query params from the incoming request (e.g. ?source=email)
+    # and forward them to the target deep link URLs so the app can read them.
+    passthrough_params = dict(request.query_params)
+
     if not is_mobile:
         if platform == 'Desktop' and db_link_data.get('desktop_url'):
             redirect_url = db_link_data['desktop_url']
@@ -150,10 +154,12 @@ async def redirect_dynamic_link(
         else:
             redirect_url = db_link_data['fallback_url']
             redirect_type = 'fallback'
-        
+
         # Add custom parameters for server-side redirects
         if db_link_data.get('custom_parameters'):
             redirect_url = build_redirect_url(redirect_url, db_link_data['custom_parameters'])
+        if passthrough_params:
+            redirect_url = build_redirect_url(redirect_url, passthrough_params)
     else:
         # For mobile, the final URL is determined client-side.
         # We'll set a placeholder for logging purposes.
@@ -217,10 +223,20 @@ async def redirect_dynamic_link(
         await cache.increment(click_key)
 
     if is_mobile:
+        # Forward query params to mobile deep link URLs
+        ios_url = db_link_data.get('ios_url')
+        android_url = db_link_data.get('android_url')
+        fallback_url = db_link_data.get('fallback_url')
+        if passthrough_params:
+            if ios_url:
+                ios_url = build_redirect_url(ios_url, passthrough_params)
+            if android_url:
+                android_url = build_redirect_url(android_url, passthrough_params)
+
         html_content = generate_redirect_html(
-            ios_url=db_link_data.get('ios_url'),
-            android_url=db_link_data.get('android_url'),
-            fallback_url=db_link_data.get('fallback_url'),
+            ios_url=ios_url,
+            android_url=android_url,
+            fallback_url=fallback_url,
             social_title=db_link_data.get('social_title'),
             social_description=db_link_data.get('social_description'),
             social_image_url=db_link_data.get('social_image_url')
