@@ -13,7 +13,13 @@ def detect_platform_and_device(user_agent_string: str) -> Tuple[str, str, str, s
     user_agent = parse(user_agent_string)
     
     # Determine platform
-    if user_agent.is_mobile:
+    # Native app requests use CFNetwork/Darwin (iOS) or okhttp (Android)
+    # and won't contain typical browser user-agent tokens
+    if 'CFNetwork' in user_agent_string or 'Darwin' in user_agent_string:
+        platform = 'iOS'
+    elif 'okhttp' in user_agent_string:
+        platform = 'Android'
+    elif user_agent.is_mobile:
         if 'iPhone' in user_agent_string or 'iPad' in user_agent_string:
             platform = 'iOS'
         elif 'Android' in user_agent_string:

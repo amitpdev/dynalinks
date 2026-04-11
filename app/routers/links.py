@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Request, Response
 from typing import List, Optional
 from uuid import UUID
+import logging
 import qrcode
 from io import BytesIO
 import base64
@@ -13,9 +14,12 @@ from app.schemas import (
     QRCodeRequest,
     ErrorResponse
 )
-from app.utils import generate_unique_short_code, generate_custom_short_code
+from app.utils import generate_unique_short_code, generate_custom_short_code, hash_ip_address
+from app.analytics import detect_platform_and_device, get_location_from_ip, get_client_ip
 from app.cache import cache
 from app.config import settings
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/links", tags=["Dynamic Links"])
 
@@ -107,35 +111,82 @@ async def list_dynamic_links(
 
 
 @router.get("/{short_code}", response_model=DynamicLinkResponse)
-async def get_dynamic_link(short_code: str, db: PostgresDB = Depends(get_db_instance)):
-    """Get a specific dynamic link by short code."""
-    
+async def get_dynamic_link(short_code: str, request: Request, db: PostgresDB = Depends(get_db_instance)):
+    """Get a specific dynamic link by short code. Called by mobile apps to resolve short links."""
+
     # Try cache first
     cache_key = f"link:{short_code}"
     cached_link = await cache.get(cache_key)
+    link_id = None
+
     if cached_link:
         try:
-            return DynamicLinkResponse.model_validate_json(cached_link)
+            response_data = DynamicLinkResponse.model_validate_json(cached_link)
+            link_id = response_data.id
         except Exception:
             # Cache data is corrupted, delete it and fetch from database
             await cache.delete(cache_key)
+            response_data = None
+    else:
+        response_data = None
 
-    # Query database
-    query = "SELECT * FROM dynamic_links WHERE short_code = $1;"
-    db_link = await db.fetchrow(query, short_code)
+    if response_data is None:
+        # Query database
+        query = "SELECT * FROM dynamic_links WHERE short_code = $1;"
+        db_link = await db.fetchrow(query, short_code)
 
-    if not db_link:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Dynamic link not found"
-        )
-    
-    db_link_dict = dict(db_link)
-    db_link_dict["short_url"] = f"{settings.short_domain}/{short_code}"
-    response_data = DynamicLinkResponse.model_validate(db_link_dict)
+        if not db_link:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Dynamic link not found"
+            )
 
-    # Cache for future requests
-    await cache.set(cache_key, response_data.model_dump_json(), expire=3600)
+        db_link_dict = dict(db_link)
+        link_id = db_link_dict["id"]
+        db_link_dict["short_url"] = f"{settings.short_domain}/{short_code}"
+        response_data = DynamicLinkResponse.model_validate(db_link_dict)
+
+        # Cache for future requests
+        await cache.set(cache_key, response_data.model_dump_json(), expire=3600)
+
+    # Track analytics (app-resolved links)
+    if settings.enable_analytics and link_id:
+        try:
+            user_agent_string = request.headers.get("User-Agent", "")
+            client_ip = get_client_ip(request)
+            referer = request.headers.get("Referer")
+            platform, device_type, browser, os = detect_platform_and_device(user_agent_string)
+            country, region, city = get_location_from_ip(client_ip)
+
+            analytics_query = """
+                INSERT INTO link_analytics (
+                    link_id, short_code, ip_address, user_agent, referer, platform,
+                    device_type, browser, os, country, region, city, redirected_to, redirect_type
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14);
+            """
+            await db.execute(
+                analytics_query,
+                link_id,
+                short_code,
+                hash_ip_address(client_ip),
+                user_agent_string[:500],
+                referer[:500] if referer else None,
+                platform,
+                device_type,
+                browser[:100],
+                os[:100],
+                country,
+                region,
+                city,
+                "app-resolved",
+                "api",
+            )
+
+            # Update click counter in cache
+            click_key = f"clicks:{short_code}"
+            await cache.increment(click_key)
+        except Exception:
+            logger.exception("Failed to track analytics for short code: %s", short_code)
 
     return response_data
 
