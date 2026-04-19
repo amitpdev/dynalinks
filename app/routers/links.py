@@ -18,13 +18,14 @@ from app.utils import generate_unique_short_code, generate_custom_short_code, ha
 from app.analytics import detect_platform_and_device, get_location_from_ip, get_client_ip
 from app.cache import cache
 from app.config import settings
+from app.security import require_api_key
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/links", tags=["Dynamic Links"])
 
 
-@router.post("/", response_model=DynamicLinkResponse)
+@router.post("/", response_model=DynamicLinkResponse, dependencies=[Depends(require_api_key)])
 async def create_dynamic_link(
     link_data: DynamicLinkCreate,
     custom_code: Optional[str] = Query(None, description="Custom short code (optional)"),
@@ -85,7 +86,7 @@ async def create_dynamic_link(
     return response_data
 
 
-@router.get("/", response_model=List[DynamicLinkResponse])
+@router.get("/", response_model=List[DynamicLinkResponse], dependencies=[Depends(require_api_key)])
 async def list_dynamic_links(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
@@ -191,7 +192,7 @@ async def get_dynamic_link(short_code: str, request: Request, db: PostgresDB = D
     return response_data
 
 
-@router.put("/{short_code}", response_model=DynamicLinkResponse)
+@router.put("/{short_code}", response_model=DynamicLinkResponse, dependencies=[Depends(require_api_key)])
 async def update_dynamic_link(
     short_code: str,
     link_update: DynamicLinkUpdate,
@@ -237,7 +238,7 @@ async def update_dynamic_link(
     return response_data
 
 
-@router.delete("/{short_code}")
+@router.delete("/{short_code}", dependencies=[Depends(require_api_key)])
 async def delete_dynamic_link(short_code: str, db: PostgresDB = Depends(get_db_instance)):
     """Delete a dynamic link (soft delete by deactivating)."""
     query = "UPDATE dynamic_links SET is_active = FALSE WHERE short_code = $1 RETURNING id;"
@@ -256,7 +257,7 @@ async def delete_dynamic_link(short_code: str, db: PostgresDB = Depends(get_db_i
     return {"message": "Dynamic link deactivated successfully"}
 
 
-@router.get("/{short_code}/qr")
+@router.get("/{short_code}/qr", dependencies=[Depends(require_api_key)])
 async def generate_qr_code(
     short_code: str,
     size: int = Query(200, ge=50, le=1000),

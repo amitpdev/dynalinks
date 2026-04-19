@@ -15,6 +15,7 @@ from app.analytics import (
 )
 from app.cache import cache
 from app.config import settings
+from app.security import require_api_key
 from app.utils import hash_ip_address
 from fastapi.responses import HTMLResponse
 
@@ -250,7 +251,11 @@ async def redirect_dynamic_link(
         )
 
 
-@router.get("/api/v1/analytics/{short_code}", response_model=LinkAnalyticsResponse)
+@router.get(
+    "/api/v1/analytics/{short_code}",
+    response_model=LinkAnalyticsResponse,
+    dependencies=[Depends(require_api_key)],
+)
 async def get_link_analytics(
     short_code: str,
     days: int = 30,

@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from fastapi.openapi.utils import get_openapi
@@ -20,12 +20,15 @@ async def lifespan(app: FastAPI):
     await db.disconnect()
 
 # Initialize FastAPI app
+_docs_enabled = settings.debug and settings.environment != "production"
+
 app = FastAPI(
     title="DynaLinks - Dynamic Link Service",
     description="A Firebase Dynamic Links alternative - URL shortener with platform-specific redirects",
     version="1.0.0",
-    docs_url="/docs" if settings.debug else None,
-    redoc_url="/redoc" if settings.debug else None,
+    docs_url="/docs" if _docs_enabled else None,
+    redoc_url="/redoc" if _docs_enabled else None,
+    openapi_url="/openapi.json" if _docs_enabled else None,
     lifespan=lifespan
 )
 
@@ -63,25 +66,24 @@ request_counts = {}
 
 @app.middleware("http")
 async def rate_limit_middleware(request: Request, call_next):
-    client_ip = request.client.host
+    client_ip = request.client.host if request.client else "unknown"
     current_time = time.time()
-    
-    # Clean old entries (older than 1 minute)
+
     cutoff_time = current_time - 60
-    request_counts[client_ip] = [
-        timestamp for timestamp in request_counts.get(client_ip, [])
-        if timestamp > cutoff_time
-    ]
-    
-    # Check rate limit
-    if len(request_counts.get(client_ip, [])) >= settings.rate_limit_per_minute:
-        raise HTTPException(status_code=429, detail="Rate limit exceeded")
-    
-    # Add current request
-    request_counts.setdefault(client_ip, []).append(current_time)
-    
-    response = await call_next(request)
-    return response
+    timestamps = [t for t in request_counts.get(client_ip, ()) if t > cutoff_time]
+
+    if len(timestamps) >= settings.rate_limit_per_minute:
+        request_counts[client_ip] = timestamps
+        return JSONResponse(
+            status_code=429,
+            content={"detail": "Rate limit exceeded"},
+            headers={"Retry-After": "60"},
+        )
+
+    timestamps.append(current_time)
+    request_counts[client_ip] = timestamps
+
+    return await call_next(request)
 
 # Include routers
 app.include_router(links.router)

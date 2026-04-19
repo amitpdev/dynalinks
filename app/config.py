@@ -14,6 +14,9 @@ class Settings(BaseSettings):
     secret_key: str
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 30
+    # Shared secret for admin endpoints (create/list/update/delete/analytics/qr).
+    # When unset, those endpoints are open — keep it that way only during rollout.
+    api_key: Optional[str] = None
     
     # Domain Configuration
     base_domain: str
